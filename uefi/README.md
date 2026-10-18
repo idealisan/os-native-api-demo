@@ -305,7 +305,7 @@ FS0:\hello.efi
 uefi/
 ├── Makefile                       顶层：all / check / qemu / clean
 ├── scripts/
-│   ├── check-efi.sh               静态校验 PE32+ / Subsystem=10 / 有 .reloc
+│   ├── check-efi.py               静态校验 PE32+ / Subsystem=10 / 有 .reloc
 │   └── run-qemu.sh                QEMU + OVMF 冒烟测试
 ├── examples/
 │   ├── gnu-efi-hello/

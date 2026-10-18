@@ -61,8 +61,9 @@ examples/freestanding-hello/hello.efi:
 
 # ------------------------------------------------------------- 检查
 
+# 直接按 PE/COFF 的字节偏移读 PE 头，不依赖 objdump 的输出排版
 check: all
-	@./scripts/check-efi.sh $(APPS)
+	@./scripts/check-efi.py $(APPS)
 
 # ------------------------------------------------------------- QEMU
 

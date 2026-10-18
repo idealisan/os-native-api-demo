@@ -63,8 +63,7 @@ jobs:
       - name: Inspect artifacts
         run: |
           file uefi/examples/*/hello.efi
-          x86_64-w64-mingw32-objdump -p uefi/examples/freestanding-hello/hello.efi \
-            | sed -n '/Magic/,/Base Relocation Directory/p'
+          x86_64-w64-mingw32-objdump -p uefi/examples/freestanding-hello/hello.efi | head -40
           x86_64-w64-mingw32-objdump -d -j .text uefi/examples/gnu-efi-hello/hello.efi \
             | sed -n '/<efi_main>:/,+12p'
 

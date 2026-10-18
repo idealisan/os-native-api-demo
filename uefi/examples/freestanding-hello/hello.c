@@ -18,18 +18,21 @@
 #define TAG  L"[freestanding] "
 
 /*
- * 下面这两个全局变量是**故意**放在 .data 的。
+ * 下面这个指针是**故意**保留一条绝对地址重定位的。
  *
- * 数据段里的指针必须写成「绝对地址」，所以链接器一定会为它们生成一条
- * IMAGE_REL_BASED_DIR64 重定位记录。也就是说：只要固件把我们加载到
- * --image-base 之外的任何地址，greeting_ptr 在重定位之前就是一个死地址，
- * 重定位之后才指向真正的 greeting[]。
+ * 一开始写的是 `static CHAR16 *greeting_ptr = greeting;`，结果 -O2 直接把它
+ * 当成编译期常量：反汇编里只剩一条 lea greeting(%rip)，没有任何地址是「运行时
+ * 才知道」的。链接器于是没生成 IMAGE_REL_BASED_DIR64，也没有 .reloc 段 ——
+ * pe_relocate() 变成了一段永远不干活的死代码，整个自重定位也就没得演示了。
  *
- * 想亲眼看看重定位有多重要：把 pe_relocate() 的调用注释掉再跑一次，
- * 输出就会变成乱码或者直接崩。
+ * 去掉 static + 用 volatile 读，两个约束一起把这条路堵死：
+ *   - 外部链接：编译器不知道别的 TU 会不会改它
+ *   - volatile  ：每次都必须真的从内存里读，不能再常量折叠
+ * 于是 .data 里必然存着「链接期绝对地址」，
+ * 也就是一条 IMAGE_REL_BASED_DIR64，pe_relocate() 才有真活可干。
  */
-static CHAR16  greeting[]    = TAG L"Hello World!\r\n";
-static CHAR16 *greeting_ptr  = greeting;
+static CHAR16 greeting[] = TAG L"Hello World!\r\n";
+CHAR16 *volatile greeting_ptr = greeting;
 
 /* efi_boot 填进来，efi_main 打印，用来证明 delta 确实算出来了 */
 static UINT64  g_reloc_delta;

@@ -133,7 +133,11 @@ def check(path):
         )
 
     if not info["reloc_rva"] or not info["reloc_size"]:
-        errors.append("没有 Base Relocation Directory（.reloc），镜像不可重定位")
+        errors.append(
+            "没有 Base Relocation Directory（.reloc）—— 镜像一条重定位都没有，"
+            "固件只能把它加载到首选基址 ImageBase=0x%x；"
+            "UEFI 规范要求 PE/COFF 镜像必须可重定位" % info["image_base"]
+        )
 
     if info["entry_rva"] == 0:
         errors.append("AddressOfEntryPoint 为 0")

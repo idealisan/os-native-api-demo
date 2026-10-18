@@ -217,8 +217,8 @@ pe_relocate (loaded_image->ImageBase);   /* 固件告诉我们的「实际加载
 这个镜像里**确实**有东西需要修正。`hello.c` 里有一个故意写的全局变量：
 
 ```c
-static CHAR16  greeting[]   = TAG L"Hello World!\r\n";
-static CHAR16 *greeting_ptr = greeting;      /* <- 落在 .data，产生一条 DIR64 重定位 */
+static CHAR16 greeting[] = TAG L"Hello World!\r\n";
+CHAR16 *volatile greeting_ptr = greeting;   /* 落在 .data -> 一条 DIR64 重定位 */
 ```
 
 数据段里的指针必须存绝对地址，链接器因此会生成一条 `IMAGE_REL_BASED_DIR64`。
@@ -230,6 +230,13 @@ static CHAR16 *greeting_ptr = greeting;      /* <- 落在 .data，产生一条 D
 [freestanding] SystemTable revision 0x0002001e, BootServices @ 0x7f7d9a0
 [freestanding] relocation delta 0x7f7c0000
 ```
+
+> `volatile` 和「去掉 `static`」这两处不是装饰，是必需的。
+> 一开始写的是 `static CHAR16 *greeting_ptr = greeting;`，`-O2` 认定它是编译期
+> 常量，直接折叠成 `lea greeting(%rip)` —— 链接完整个镜像一条重定位都不剩，
+> `.reloc` 段也就不存在了，`pe_relocate()` 变成一段永远不干活的死代码。
+> `make check` 里「必须存在 Base Relocation Directory」这一条就是为了抓这种
+> 情况：UEFI 规范要求 PE/COFF 镜像可重定位，连一条重定位都没有说明根本没验证过。
 
 把 `efi_boot()` 里 `pe_relocate()` 那行注释掉再跑一次，就能亲眼看到它挂掉的样子。
 

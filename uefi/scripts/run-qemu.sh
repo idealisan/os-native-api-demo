@@ -154,10 +154,8 @@ set -e
 
 echo
 echo "  LOG      build/serial.log"
-if [[ $pipe_rc -ne 0 ]]; then
-	# 超时（124）或 QEMU 自己退出的非零码都不算失败，
-	# 下面的断言才是真正的判据。
-	echo "  NOTE     qemu exited with $pipe_rc (正常情况下由 Shell 的 reset -s 触发)"
+if [[ $pipe_rc -ne 0 && $pipe_rc -ne 124 ]]; then
+	echo "  NOTE     qemu exited with $pipe_rc"
 fi
 
 # --------------------------------------------------------------- 断言
@@ -171,5 +169,24 @@ for e in "${EXPECT[@]}"; do
 		rc=1
 	fi
 done
+
+# 只断言「打印出来了」是不够的：应用返回后如果没把栈指针还原回去，
+# UEFI Shell 会拿着错位的栈继续跑，跳进 .text 之外执行 ->
+# #UD Invalid Opcode —— 而 Hello World 其实早就打印完了。
+# 所以额外检查固件有没有报异常。
+if grep -qE 'X64 Exception Type|ASSERT_[A-Z]|!!! ' "$BUILD_DIR/serial.log"; then
+	echo "  FAIL    固件报告了异常（见 build/serial.log）："
+	grep -E 'X64 Exception Type|ASSERT_[A-Z]|!!! ' "$BUILD_DIR/serial.log" \
+		| head -5 | sed 's/^/          /'
+	rc=1
+else
+	echo "  PASS    固件没有报告异常"
+fi
+
+# startup.nsh 末尾的 reset -s 应该让 QEMU 自己退出，而不是被超时杀掉
+if [[ $pipe_rc -eq 124 ]]; then
+	echo "  FAIL    qemu 跑满 ${QEMU_TIMEOUT}s 才被超时杀掉（reset -s 没生效？）"
+	rc=1
+fi
 
 exit $rc

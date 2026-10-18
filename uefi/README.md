@@ -171,10 +171,11 @@ x86_64-w64-mingw32-gcc -nostdlib -Wl,--subsystem,10 -Wl,-dll -Wl,-e,efi_entry ..
 ```asm
 efi_entry:
 	cld                       /* UEFI 要求 DF=0 */
+	movq	%rsp, %r11        /* 记住固件给的栈指针 */
 	andq	$-16, %rsp        /* 对齐；固件不保证入口时栈已对齐 */
 	subq	$0x20, %rsp        /* 32 字节 home space，仍 16 字节对齐 */
 	call	efi_boot          /* rcx=ImageHandle, rdx=SystemTable */
-	addq	$0x20, %rsp
+	movq	%r11, %rsp        /* 栈指针必须还原！ */
 	ret
 ```
 
@@ -184,6 +185,13 @@ efi_entry:
 可能是错的。
 
 本例绕开这一点：不碰任何全局变量，直接把两个寄存器传给 C 函数。
+
+> `%r11` 那两行别省。`and $-16, %rsp` 会把栈指针往下取整，丢掉固件给的
+> 0~15 字节；不还回去，调用者（这里是 UEFI Shell）就拿着一个错位的栈继续跑，
+> 实测会跳进 `.text` 之外执行 —— `#UD Invalid Opcode`。
+> 而在这个 bug 存在的时候，Hello World 其实早就打印完了，
+> 所以「断言输出里有 Hello World」是抓不住它的，
+> `scripts/run-qemu.sh` 里那条「固件不能报异常」的断言才抓得住。
 
 ### 自重定位怎么知道自己在哪
 
@@ -227,9 +235,17 @@ CHAR16 *volatile greeting_ptr = greeting;   /* 落在 .data -> 一条 DIR64 重�
 
 ```
 [freestanding] Hello World!
-[freestanding] SystemTable revision 0x0002001e, BootServices @ 0x7f7d9a0
-[freestanding] relocation delta 0x7f7c0000
+[freestanding] SystemTable revision 0x00020046, BootServices @ 0x000000000feaff00
+[freestanding] relocation delta 0x0000000000000000
 ```
+
+> **delta 是 0 也是正常的。** EDK2 会优先把镜像加载到 PE 头里写着的
+> `ImageBase`（这里由 `--image-base,0x100000` 指定）；能放得下就不需要挪，
+> delta 就是 0，`pe_relocate()` 也就什么都不做。改成
+> `-Wl,--image-base,0x2000000` 之类更容易被占用的地址，大概率能看到非零的
+> delta（固件也可能干脆先自己重定位一遍，那我们的 delta 同样是 0——
+> 两种情况都正确，`pe_relocate()` 里的 `if (delta == 0) return EFI_SUCCESS`
+> 保证重复执行也无害）。
 
 > `volatile` 和「去掉 `static`」这两处不是装饰，是必需的。
 > 一开始写的是 `static CHAR16 *greeting_ptr = greeting;`，`-O2` 认定它是编译期

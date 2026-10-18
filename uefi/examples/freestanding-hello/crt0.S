@@ -23,6 +23,12 @@
  *
  * 栈对齐：call 之前 rsp 必须是 16 字节对齐，这样 callee 入口处
  * rsp ≡ 8 (mod 16)，同时满足 SysV x64 和 MS x64 两种 ABI 的要求。
+ *
+ * 注意「要求 3：栈指针必须还原」。`and $-16, %rsp` 会把 rsp 往下取整，
+ * 丢掉固件给的 0~15 字节；返回前必须把原值塞回去，否则调用者（这里是
+ * UEFI Shell）会拿着一个错位的栈继续跑，实测会直接跳进数据段里执行 ->
+ * #UD Invalid Opcode。r11 是易失寄存器，调用者按 ABI 不能指望它被保留，
+ * 所以正好拿来存原始 rsp。
  */
 
 #if defined(__x86_64__)
@@ -33,10 +39,11 @@
 	.align	16
 efi_entry:
 	cld				/* 要求 4：方向标志必须清零 */
+	movq	%rsp, %r11		/* 记住固件给的栈指针，返回前要还回去 */
 	andq	$-16, %rsp		/* 固件不保证入口时栈已 16 字节对齐 */
 	subq	$0x20, %rsp		/* 32 字节 home space，仍然 16 字节对齐 */
 	call	efi_boot			/* rcx=ImageHandle, rdx=SystemTable */
-	addq	$0x20, %rsp
+	movq	%r11, %rsp		/* 要求 3：栈指针必须还原 */
 	ret
 
 #endif /* __x86_64__ */

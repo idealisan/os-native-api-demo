@@ -61,11 +61,13 @@ jobs:
         run: make check
 
       - name: Inspect artifacts
+        if: always()
         run: |
-          file uefi/examples/*/hello.efi
-          x86_64-w64-mingw32-objdump -p uefi/examples/freestanding-hello/hello.efi | head -40
+          file uefi/examples/*/hello.efi || true
+          x86_64-w64-mingw32-objdump -p uefi/examples/freestanding-hello/hello.efi | head -45 || true
+          x86_64-w64-mingw32-objdump -r uefi/examples/freestanding-hello/hello.efi || true
           x86_64-w64-mingw32-objdump -d -j .text uefi/examples/gnu-efi-hello/hello.efi \
-            | sed -n '/<efi_main>:/,+12p'
+            | sed -n '/<efi_main>:/,+12p' || true
 
       # 真机验证：QEMU + OVMF 里跑，断言串口输出里有两行 Hello World
       - name: Run under QEMU + OVMF
@@ -77,6 +79,7 @@ jobs:
         run: cat uefi/build/serial.log || true
 
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: efi-apps
@@ -84,4 +87,4 @@ jobs:
             uefi/examples/gnu-efi-hello/hello.efi
             uefi/examples/freestanding-hello/hello.efi
             uefi/build/serial.log
-          if-no-files-found: error
+          if-no-files-found: warn

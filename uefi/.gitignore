@@ -1,0 +1,4 @@
+build/
+*.efi
+*.so
+*.o

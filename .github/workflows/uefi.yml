@@ -1,0 +1,88 @@
+name: UEFI hello world
+
+# 手动触发 + 推送 uefi/ 或本文件时运行。
+# 工具链全部装在 CI 里，本地（macOS）不需要安装 mingw-w64 / OVMF。
+on:
+  push:
+    paths:
+      - 'uefi/**'
+      - '.github/workflows/uefi.yml'
+  pull_request:
+    paths:
+      - 'uefi/**'
+      - '.github/workflows/uefi.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build + boot under OVMF
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            gcc-mingw-w64-x86-64 \
+            qemu-system-x86 \
+            ovmf \
+            p7zip-full \
+            file
+
+      # gnu-efi 示例需要宿主 gcc + 带 efi-app-x86_64 的 objcopy；
+      # freestanding 示例需要 x86_64-w64-mingw32-gcc。
+      - name: Show toolchain
+        run: |
+          gcc --version | head -1
+          ld --version | head -1
+          objcopy --help | grep -o 'efi-app-x86_64' | head -1
+          x86_64-w64-mingw32-gcc --version | head -1
+          qemu-system-x86_64 --version | head -1
+          ls /usr/share/ovmf/
+
+      - name: Build gnu-efi library
+        working-directory: uefi
+        run: make gnu-efi-lib
+
+      - name: Build both hello worlds
+        working-directory: uefi
+        run: make
+
+      # 静态检查：PE32+ / Subsystem=10 (EFI_APPLICATION) / 有 Base Relocation 目录
+      - name: Check PE headers
+        working-directory: uefi
+        run: make check
+
+      - name: Inspect artifacts
+        run: |
+          file uefi/examples/*/hello.efi
+          x86_64-w64-mingw32-objdump -p uefi/examples/freestanding-hello/hello.efi \
+            | sed -n '/Magic/,/Base Relocation Directory/p'
+          x86_64-w64-mingw32-objdump -d -j .text uefi/examples/gnu-efi-hello/hello.efi \
+            | sed -n '/<efi_main>:/,+12p'
+
+      # 真机验证：QEMU + OVMF 里跑，断言串口输出里有两行 Hello World
+      - name: Run under QEMU + OVMF
+        working-directory: uefi
+        run: make qemu
+
+      - name: Show serial log
+        if: always()
+        run: cat uefi/build/serial.log || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: efi-apps
+          path: |
+            uefi/examples/gnu-efi-hello/hello.efi
+            uefi/examples/freestanding-hello/hello.efi
+            uefi/build/serial.log
+          if-no-files-found: error
